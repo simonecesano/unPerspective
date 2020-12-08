@@ -33,52 +33,78 @@ input[type=range][orient=vertical]
     padding: 0 5px;
 }
 
+#input {
+    position: relative;
+    display:block;
+    top: 0px; left: 0px;
+    margin:0; padding:0;
+}
+
+#dots {
+    position: absolute;
+    top: 0; left: 0;
+}
+
+.dot { fill:#ef2929;stroke:#ef2929;stroke-width:0.264999;stop-color:#000000 }
 </style>
 <template>
   <div ref="appspace">
-    <div style="display:inline-block;vertical-align:top;">
-      <canvas ref="input" v-on:drop.prevent="dropHandler" v-on:dragover.prevent="dragOverHandler" id="input"></canvas>
-      <div>{{ scale }} || {{ scaleX }} | {{ Math.pow(10, this.scaleX) * this.scale }} ||
-	{{ scaleY }} | {{ Math.pow(10, this.scaleY) * this.scale }} ||
-      </div>
+    <div style="display:inline-block;vertical-align:top;margin:0;padding:0;position:relative">
+      <canvas ref="input" id="input"></canvas>
+      <svg ref="dots" id="dots"
+      	   xmlns:dc="http://purl.org/dc/elements/1.1/"
+      	   xmlns:cc="http://creativecommons.org/ns#"
+      	   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+      	   xmlns:svg="http://www.w3.org/2000/svg"
+      	   xmlns="http://www.w3.org/2000/svg"
+      	   version="1.1"
+
+      	   v-bind:width="svg.width + 'px'"
+      	   v-bind:height="svg.height + 'px'"
+      	   v-bind:viewBox="svg.viewbox.join(' ')"
+
+	   v-on:click="addDot"
+	   v-on:drop.prevent="dropHandler" v-on:dragover.prevent="dragOverHandler" 
+
+	   v-on:mousemove="pointDrag"		
+	   v-on:mouseup="pointDragEnd"		
+      	   >
+	<g>
+	  <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
+	  <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
+	  <line v-if="points.length > 3" :x1="points[2][0]" :y1="points[2][1]" :x2="points[3][0]" :y2="points[3][1]" stroke="white" />
+	  <line v-if="points.length >= 4" :x1="points[3][0]" :y1="points[3][1]" :x2="points[0][0]" :y2="points[0][1]" stroke="white" />
+	</g>
+	<g :key="tick">
+	  <circle v-for="(p, i) in points" 
+		  v-on:mousedown="pointDragStart($event, i)"
+		  class="dot" transform="scale(1, 1)"
+		  v-bind:id="'points[' + i + ']'"
+		  v-bind:cx="p[0]" v-bind:cy="p[1]" r="4" />
+	</g>
+      </svg>
     </div>
     <div style="display:inline-block;vertical-align:top;">
       <canvas v-bind:style="style" ref="output" id="output"></canvas>
       <input type="range" v-model="scaleY"  min="-1" max="3" step="0.01" orient="vertical" />
       <input type="range" v-model="offsetY" orient="vertical" v-bind:min="-output_canvas.height / 2" v-bind:max="output_canvas.height / 2" step="1"  />
       <br />
-      <input type="range" v-model="scaleX" min="-1" max="3" step="0.01" /><br />
+      <input type="range" v-model="scaleX" min="-1" max="3" step="0.01" @mousedown="checkShift" @mouseup="clearShift" /><br />
       <input type="range" v-model="offsetX" v-bind:min="-output_canvas.width / 2" v-bind:max="output_canvas.width / 2" step="1"  />
     </div>
     <div>
       <button class="favorite styled" @click="sendCommand()"
-              type="button">send</button>
-      <button class="favorite styled" @click="setPoints()"
-              type="button">points</button>
+              type="button">correct</button>
       <button class="favorite styled" @click="clear()"
-              type="button">clear</button>
+              type="button">clear points</button>
     </div>
   </div>    
 </template>
 <script>
-
-function shuffle(input) {
-    var array = Array.from(input);
-    
-    var currentIndex = array.length, temporaryValue, randomIndex;
-    while (0 !== currentIndex) {
-	
-	// Pick a remaining element...
-	randomIndex = Math.floor(Math.random() * currentIndex);
-	currentIndex -= 1;
-	
-	// And swap it with the current element.
-	temporaryValue = array[currentIndex];
-	array[currentIndex] = array[randomIndex];
-	array[randomIndex] = temporaryValue;
+    function getMousePos(canvas, evt) {
+	var rect = canvas.getBoundingClientRect();
+	return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
     }
-    return array;
-}
 
 module.exports = {
     data: function () {
@@ -92,10 +118,19 @@ module.exports = {
 	    image: undefined,
 	    output_image: undefined,
 	    bounding_box: {},
-	    scaleX: 0, scaleY: 0, offsetX: 0, offsetY: 0,
+	    scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0,
 	    scale: 1,
 	    output_canvas: document.createElement('canvas'),
+	    dragging: false,
+	    currentDot: null,
+	    svg: { width: 105, height: 148, viewbox: [0, 0, 105, 148 ] },
+	    tick: 0,
+	    shiftKey: false
 	};
+    },
+    computed: {
+	dots: function(){
+	}
     },
     mounted: function(){
 	var c = this;
@@ -114,22 +149,74 @@ module.exports = {
     beforeCreate: function(){
     },
     watch: {
-	scaleX:  function(){ this.redraw() },
+	scaleX:  function(after, before){
+	    console.log(after, before, after / before);
+	    if (this.shiftKey) {
+	    	console.log('here')
+		console.log(this.scaleY);
+		this.scaleY = this.scaleY * after / before;
+		console.log(this.scaleY);		
+	    }
+	    // this.scaleX = after;
+	    this.redraw()
+	},
 	scaleY:  function(){ this.redraw() },
 	offsetX: function(){ this.redraw() },
 	offsetY: function(){ this.redraw() },	
     },
     methods: {
+	checkShift: function(e){
+	    console.log(e.shiftKey);
+	    this.shiftKey = e.shiftKey;
+	},
+	clearShift: function(e){
+	    console.log(e.shiftKey);
+		    
+	    this.shiftKey = false
+	},	
+	pointDragStart: function(e, i){
+	    this.currentDot = i;
+	    this.dragging = true;
+	    e.stopPropagation();
+	},
+	pointDrag: function(e){
+	    if (this.dragging) {
+		var p = getMousePos(this.$refs.dots, e);
+		this.points[this.currentDot] = [ p.x, p.y ]
+		this.tick = (new Date).getTime();
+		e.stopPropagation();
+	    }
+	},
+	pointDragEnd: function(e){
+	    var c = this;
+	    if (this.dragging) {
+		var p = getMousePos(this.$refs.dots, e);
+		this.points[this.currentDot] = [ p.x, p.y ]
+		this.tick = (new Date).getTime();
+
+		this.dragging = false;
+		this.currentDot = null;
+		e.stopPropagation();
+	    }
+	    return false;
+	},
+	addDot: function(e) {
+	    if (!this.dragging) {
+		var p = getMousePos(this.$refs.dots, e);
+		this.points.push([p.x, p.y])
+	    } else {
+		this.dragging = false;
+		this.currentDot = null;
+	    }
+	},
 	redraw: function(){
 	    var canvas = this.$refs.output;
 	    var ctx = canvas.getContext('2d');
 
 	    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-	    ctx.scale(Math.pow(10, this.scaleX) * this.scale, Math.pow(10, this.scaleY) * this.scale);
+	    ctx.scale(Math.pow(10, this.scaleX - 1) * this.scale, Math.pow(10, this.scaleY - 1) * this.scale);
 	    ctx.translate(this.offsetX, this.offsetY);
-
-	    console.log(this.output_canvas);
 
 	    ctx.drawImage(this.output_canvas, 0, 0);
 	    ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -146,16 +233,18 @@ module.exports = {
 	    ];
 
 	    c.bounding_box = c.$refs.appspace.getBoundingClientRect()
-	    console.log(c.bounding_box);
 	    
 	    var img = new Image;
 	    img.onload = function() {
 		var width = Math.min(img.width, (c.bounding_box.width / 2) - 128); 
 		var scale = width / img.width;
 		
-		c.output_canvas.width  = canvas.width  = output.width = width;
-		c.output_canvas.height = canvas.height = output.height = img.height * scale;
+		c.output_canvas.width  = canvas.width  = output.width = c.svg.width   = width;
+		c.output_canvas.height = canvas.height = output.height = c.svg.height = img.height * scale;
 
+		c.svg.viewbox[2] = c.output_canvas.width;
+		c.svg.viewbox[3] = c.output_canvas.height;		
+		
 		ctxs.forEach(ctx => {
 		    ctx.scale(scale, scale);
 		    ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -196,19 +285,6 @@ module.exports = {
 	    this.points = [];
 	},
 	setPoints: function(){
-	    var src = [[264,292], [269,46], [524,136], [526,315]];
-	    this.points = src;
-
-	    var ctx = this.$refs.input.getContext('2d')
-
-	    console.log(ctx);
-
-	    this.points.forEach(p => {
-		ctx.fillStyle = "#ff0000";
-		ctx.beginPath();
-		ctx.arc(p[0], p[1], 6, 0, Math.PI * 2);
-		ctx.fill();
-	    })
 	},
 	sendCommand: function(){
 	    var c = this;
@@ -217,15 +293,13 @@ module.exports = {
 
 	    console.log(this.points);
 	    
-	    if (this.points.length == 4) {
+	    if (this.points.length >= 4) {
 		var calc = new PointCalc();
-		calc.input = this.points;
+		calc.input = this.points.slice(0, 4);
 
 		var src = this.points;
 		var dst = calc.output;
 		
-
-		console.log('here');
 		var canvas = fx.canvas(1500,1500);
 
 		var texture = canvas.texture(this.image);
@@ -241,30 +315,6 @@ module.exports = {
 		
 		c.redraw()
 	    }
-	},
-	addPoint: function(e){
-	    function getMousePos(canvas, evt) {
-		var rect = canvas.getBoundingClientRect();
-		return {
-		    x: evt.clientX - rect.left,
-		    y: evt.clientY - rect.top
-		};
-	    }
-	    
-	    console.log(e);
-
-	    var p = getMousePos(this.$refs.input, e);
-	    
-	    var ctx = this.$refs.input.getContext('2d')
-	    console.log(ctx);
-
-	    ctx.fillStyle = "#ff0000";
-	    ctx.beginPath();
-	    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-	    ctx.fill();
-
-	    this.points.push([p.x, p.y])
-
 	},
     },
 }
