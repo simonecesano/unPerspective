@@ -33,14 +33,14 @@ input[type=range][orient=vertical]
     padding: 0 5px;
 }
 
-#input {
+#input, #output {
     position: relative;
-    display:block;
+    display:inline-block;
     top: 0px; left: 0px;
     margin:0; padding:0;
 }
 
-#dots {
+#dots, #grid {
     position: absolute;
     top: 0; left: 0;
 }
@@ -50,53 +50,80 @@ input[type=range][orient=vertical]
 <template>
   <div ref="appspace">
     <div style="display:inline-block;vertical-align:top;margin:0;padding:0;position:relative">
-      <canvas ref="input" id="input"></canvas>
-      <svg ref="dots" id="dots"
-      	   xmlns:dc="http://purl.org/dc/elements/1.1/"
-      	   xmlns:cc="http://creativecommons.org/ns#"
-      	   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-      	   xmlns:svg="http://www.w3.org/2000/svg"
-      	   xmlns="http://www.w3.org/2000/svg"
-      	   version="1.1"
-
-      	   v-bind:width="svg.width + 'px'"
-      	   v-bind:height="svg.height + 'px'"
-      	   v-bind:viewBox="svg.viewbox.join(' ')"
-
-	   v-on:click="addDot"
-	   v-on:drop.prevent="dropHandler" v-on:dragover.prevent="dragOverHandler" 
-
-	   v-on:mousemove="pointDrag"		
-	   v-on:mouseup="pointDragEnd"		
-      	   >
-	<g>
-	  <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
-	  <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
-	  <line v-if="points.length > 3" :x1="points[2][0]" :y1="points[2][1]" :x2="points[3][0]" :y2="points[3][1]" stroke="white" />
-	  <line v-if="points.length >= 4" :x1="points[3][0]" :y1="points[3][1]" :x2="points[0][0]" :y2="points[0][1]" stroke="white" />
-	</g>
-	<g :key="tick">
-	  <circle v-for="(p, i) in points" 
-		  v-on:mousedown="pointDragStart($event, i)"
-		  class="dot" transform="scale(1, 1)"
-		  v-bind:id="'points[' + i + ']'"
-		  v-bind:cx="p[0]" v-bind:cy="p[1]" r="4" />
-	</g>
-      </svg>
-    </div>
-    <div style="display:inline-block;vertical-align:top;">
-      <canvas v-bind:style="style" ref="output" id="output"></canvas>
-      <input type="range" v-model="scaleY"  min="-1" max="3" step="0.01" orient="vertical" />
-      <input type="range" v-model="offsetY" orient="vertical" v-bind:min="-output_canvas.height / 2" v-bind:max="output_canvas.height / 2" step="1"  />
-      <br />
-      <input type="range" v-model="scaleX" min="-1" max="3" step="0.01" @mousedown="checkShift" @mouseup="clearShift" /><br />
-      <input type="range" v-model="offsetX" v-bind:min="-output_canvas.width / 2" v-bind:max="output_canvas.width / 2" step="1"  />
-    </div>
-    <div>
-      <button class="favorite styled" @click="sendCommand()"
+      <div>
+	<canvas ref="input" id="input"></canvas>
+	<svg ref="dots" id="dots"
+      	     xmlns:dc="http://purl.org/dc/elements/1.1/"
+      	     xmlns:cc="http://creativecommons.org/ns#"
+      	     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+      	     xmlns:svg="http://www.w3.org/2000/svg"
+      	     xmlns="http://www.w3.org/2000/svg"
+      	     version="1.1"
+	     
+      	     v-bind:width="svg.width + 'px'"
+      	     v-bind:height="svg.height + 'px'"
+      	     v-bind:viewBox="svg.viewbox.join(' ')"
+	     
+	     v-on:click="addDot"
+	     v-on:drop.prevent="dropHandler" v-on:dragover.prevent="dragOverHandler" 
+	     
+	     v-on:mousemove="pointDrag"		
+	     v-on:mouseup="pointDragEnd"		
+      	     >
+	  <g>
+	    <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
+	    <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
+	    <line v-if="points.length > 3" :x1="points[2][0]" :y1="points[2][1]" :x2="points[3][0]" :y2="points[3][1]" stroke="white" />
+	    <line v-if="points.length >= 4" :x1="points[3][0]" :y1="points[3][1]" :x2="points[0][0]" :y2="points[0][1]" stroke="white" />
+	  </g>
+	  <g :key="tick">
+	    <circle v-for="(p, i) in points" 
+		    v-on:mousedown="pointDragStart($event, i)"
+		    class="dot" transform="scale(1, 1)"
+		    v-bind:id="'points[' + i + ']'"
+		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="4" />
+	  </g>
+	</svg>
+      </div>
+      <div>
+	<button class="favorite styled" @click="sendCommand()"
               type="button">correct</button>
-      <button class="favorite styled" @click="clear()"
-              type="button">clear points</button>
+	<button class="favorite styled" @click="clear()"
+		type="button">clear points</button>
+      </div>
+    </div>
+    <div style="display:inline-block;vertical-align:top;position:relative">
+      <div>
+	<canvas v-bind:style="style" ref="output" id="output"></canvas>
+	<svg ref="grid" id="grid"
+      	     xmlns:dc="http://purl.org/dc/elements/1.1/"
+      	     xmlns:cc="http://creativecommons.org/ns#"
+      	     xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+      	     xmlns:svg="http://www.w3.org/2000/svg"
+      	     xmlns="http://www.w3.org/2000/svg"
+      	     version="1.1"
+
+	     v-bind:width="svg.width + 'px'"
+      	     v-bind:height="svg.height + 'px'"
+      	     v-bind:viewBox="svg.viewbox.join(' ')"
+	     >
+	  <g v-if="gridOn">
+	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" style="stroke:white;stroke-width:0.5" />
+	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" style="stroke:white;stroke-width:0.5" />
+	  </g>
+	</svg>
+	<input name="scaleY" id="scaleY" type="range" v-model="scaleY"  min="-1" max="3" step="0.01" orient="vertical" />
+	<input type="range" v-model="offsetY" orient="vertical" v-bind:min="-output_canvas.height / 2" v-bind:max="output_canvas.height / 2" step="1"  />
+	<br />
+	<input type="range" v-model="scaleX" min="-1" max="3" step="0.01" @mousedown="checkShift" @mouseup="clearShift" /><br />
+	<input type="range" v-model="offsetX" v-bind:min="-output_canvas.width / 2" v-bind:max="output_canvas.width / 2" step="1"  />
+      </div>
+      <div>
+	<button class="favorite styled" @click="toggleGrid()"
+              type="button">toggle grid</button>
+	<button class="favorite styled" @click="saveOutput()"
+              type="button">save picture</button>
+      </div>
     </div>
   </div>    
 </template>
@@ -125,11 +152,26 @@ module.exports = {
 	    currentDot: null,
 	    svg: { width: 105, height: 148, viewbox: [0, 0, 105, 148 ] },
 	    tick: 0,
-	    shiftKey: false
+	    shiftKey: false,
+	    gridOn: true,
 	};
     },
     computed: {
 	dots: function(){
+	},
+	grid: function(){
+	    var g = [[], []];
+	    
+	    if (true) {
+		var width = this.svg.width;
+		var height = this.svg.height;
+		console.log(width, height)
+		for (let p = 0; p < width; p += 25) { g[0].push(p) }
+		for (let p = 0; p < width; p += 25) { g[1].push(p) }
+	    }
+
+	    console.log(g);
+	    return g;
 	}
     },
     mounted: function(){
@@ -142,7 +184,7 @@ module.exports = {
 	var ctx  = c.$refs.input;
 
 	cvsi.addEventListener('click', this.addPoint, false);
-	c.loadImage('/Wolfsburg_VW-Werk.jpg');
+	c.loadImage('./Wolfsburg_VW-Werk.jpg');
     },
     destroyed: function(){
     },
@@ -209,6 +251,10 @@ module.exports = {
 		this.currentDot = null;
 	    }
 	},
+	toggleGrid: function(e){ this.gridOn = !this.gridOn },
+	saveOutput: function(e){
+
+	}, 
 	redraw: function(){
 	    var canvas = this.$refs.output;
 	    var ctx = canvas.getContext('2d');
