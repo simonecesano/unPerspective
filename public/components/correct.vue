@@ -24,6 +24,11 @@ div {
 }
 #items li { list-style-type: none; }
 
+input[type=range] {
+margin-top: 0px
+}
+
+
 input[type=range][orient=vertical]
 {
     writing-mode: bt-lr; /* IE */
@@ -46,6 +51,12 @@ input[type=range][orient=vertical]
 }
 
 .dot { fill:#ef2929;stroke:#ef2929;stroke-width:0.264999;stop-color:#000000 }
+.dot.selected { fill: #0000cd }
+
+div.range { display: table-cell; vertical-align: middle; height: 50px }
+div.range label { vertical-align:middle }
+div.range input { vertical-align:middle }
+
 </style>
 <template>
   <div ref="appspace">
@@ -64,9 +75,9 @@ input[type=range][orient=vertical]
       	     v-bind:height="svg.height + 'px'"
       	     v-bind:viewBox="svg.viewbox.join(' ')"
 	     
-	     v-on:click="addDot"
 	     v-on:drop.prevent="dropHandler" v-on:dragover.prevent="dragOverHandler" 
 	     
+	     v-on:mousedown="pointDragStart"
 	     v-on:mousemove="pointDrag"		
 	     v-on:mouseup="pointDragEnd"		
       	     >
@@ -78,10 +89,15 @@ input[type=range][orient=vertical]
 	  </g>
 	  <g :key="tick">
 	    <circle v-for="(p, i) in points" 
-		    v-on:mousedown="pointDragStart($event, i)"
-		    class="dot" transform="scale(1, 1)"
+		    v-on:mousedown="dotClick($event, i)"
+		    v-bind:data-dot-index="i"
+
+		    v-bind:class="i == currentDot ? [ 'dot', 'selected' ] : [ 'dot' ]"
+		    transform="scale(1, 1)"
+
 		    v-bind:id="'points[' + i + ']'"
-		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="4" />
+		    v-bind:ref="'points[' + i + ']'"
+		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
 	  </g>
 	</svg>
       </div>
@@ -103,20 +119,26 @@ input[type=range][orient=vertical]
       	     xmlns="http://www.w3.org/2000/svg"
       	     version="1.1"
 
+
 	     v-bind:width="svg.width + 'px'"
       	     v-bind:height="svg.height + 'px'"
       	     v-bind:viewBox="svg.viewbox.join(' ')"
+
+	     v-on:mousedown="canvasDragStart"
+	     v-on:mousemove="canvasDrag"		
+	     v-on:mouseup="canvasDragEnd"		
 	     >
 	  <g v-if="gridOn">
 	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" style="stroke:white;stroke-width:0.5" />
 	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" style="stroke:white;stroke-width:0.5" />
 	  </g>
 	</svg>
-	<input name="scaleY" id="scaleY" type="range" v-model="scaleY"  min="-1" max="3" step="0.01" orient="vertical" />
-	<input type="range" v-model="offsetY" orient="vertical" v-bind:min="-output_canvas.height / 2" v-bind:max="output_canvas.height / 2" step="1"  />
-	<br />
-	<input type="range" v-model="scaleX" min="-1" max="3" step="0.01" @mousedown="checkShift" @mouseup="clearShift" /><br />
-	<input type="range" v-model="offsetX" v-bind:min="-output_canvas.width / 2" v-bind:max="output_canvas.width / 2" step="1"  />
+	<div class="range">
+	  <label for="scale">Scale</label>
+	  <input type="range" id="scaleR" v-model="scaleR" min="-1" max="3" step="0.01" @mousedown="checkShift" @mouseup="clearShift" />
+	  <label for="xyratio">X/Y ratio</label>
+	  <input type="range" v-model="xyratio" v-bind:min="-1" v-bind:max="1" step="0.01"  />
+	</div>
       </div>
       <div>
 	<button class="favorite styled" @click="toggleGrid()"
@@ -124,6 +146,12 @@ input[type=range][orient=vertical]
 	<button class="favorite styled" @click="saveOutput()"
               type="button">save picture</button>
       </div>
+    </div>
+    <div v-if="false">
+    <span>ScaleR {{ scaleR }}</span> | <span>ScaleX {{ Math.round(scaleX * 100) / 100 }}</span>
+    | <span>ScaleY {{ Math.round(scaleY * 100) / 100 }}</span> | <span>xyratio {{ xyratio }}</span>
+    | <span>scale {{ Math.round(scale * 100) / 100 }}</span>
+    | <span>overallScaleX {{ Math.round(overallScaleX * 100) / 100 }}</span> | <span>overallScaleY {{ Math.round(overallScaleY * 100) / 100 }}</span>
     </div>
   </div>    
 </template>
@@ -145,15 +173,21 @@ module.exports = {
 	    image: undefined,
 	    output_image: undefined,
 	    bounding_box: {},
-	    scaleX: 1, scaleY: 1, offsetX: 0, offsetY: 0,
 	    scale: 1,
+
+	    scaleX: 1, scaleY: 1,
+	    xyratio: 0,
+	    offsetX: 0,	offsetY: 0,
+	    overallScaleX: undefined, overallScaleY: undefined,
+	    scaleR: 1,
 	    output_canvas: document.createElement('canvas'),
 	    dragging: false,
-	    currentDot: null,
+	    currentDot: undefined,
 	    svg: { width: 105, height: 148, viewbox: [0, 0, 105, 148 ] },
 	    tick: 0,
 	    shiftKey: false,
 	    gridOn: true,
+	    fileName: undefined, 
 	};
     },
     computed: {
@@ -185,75 +219,178 @@ module.exports = {
 
 	cvsi.addEventListener('click', this.addPoint, false);
 	c.loadImage('./Wolfsburg_VW-Werk.jpg');
+
+	document.onkeydown = this.keyCheck;
+
     },
     destroyed: function(){
     },
     beforeCreate: function(){
     },
     watch: {
-	scaleX:  function(after, before){
-	    console.log(after, before, after / before);
-	    if (this.shiftKey) {
-	    	console.log('here')
-		console.log(this.scaleY);
-		this.scaleY = this.scaleY * after / before;
-		console.log(this.scaleY);		
+	currentDot: function(after, before){
+	    console.log('current dot changed', after, before);
+	},
+	scaleR: function(after, before){ this.redraw() },
+	xyratio: function(after, before){
+	    if (after > 0) {
+	    	this.scaleX += (after - before)
+	    } else if (after == 0) {
+		this.scaleX = this.scaleY = 1;
+	    } else {
+	    	this.scaleY -= (after - before)
 	    }
-	    // this.scaleX = after;
 	    this.redraw()
 	},
-	scaleY:  function(){ this.redraw() },
-	offsetX: function(){ this.redraw() },
-	offsetY: function(){ this.redraw() },	
     },
     methods: {
+	keyCheck: function(e){
+	    var c = this;
+	    if (typeof this.currentDot !== 'undefined') {
+		console.log(e, c.currentDot);
+		var p = this.points[c.currentDot];
+		if (e.key == 'ArrowUp') {
+		    p[1]--;
+		} else if (e.key == 'ArrowDown') {
+		    p[1]++;
+		} else if (e.key == 'ArrowLeft') {
+		    p[0]--;
+		} else if (e.key == 'ArrowRight') {		    
+		    p[0]++;
+		}
+		c.points[this.currentDot] = p;
+		c.tick = (new Date).getTime();
+		c.sendCommand()
+	    }
+	},
 	checkShift: function(e){
 	    console.log(e.shiftKey);
 	    this.shiftKey = e.shiftKey;
 	},
 	clearShift: function(e){
-	    console.log(e.shiftKey);
-		    
+	    console.log(e.shiftKey);	    	    
 	    this.shiftKey = false
-	},	
-	pointDragStart: function(e, i){
-	    this.currentDot = i;
-	    this.dragging = true;
-	    e.stopPropagation();
 	},
-	pointDrag: function(e){
-	    if (this.dragging) {
-		var p = getMousePos(this.$refs.dots, e);
-		this.points[this.currentDot] = [ p.x, p.y ]
-		this.tick = (new Date).getTime();
-		e.stopPropagation();
+	dotClick: function(e, i){
+	    var c = this;
+	    // this.currentDot = i;
+	},
+	pointDragStart: function(e){
+	    var c = this;
+	    // console.log(e.type, this.notclick);
+
+	    var d = document.elementFromPoint(e.x, e.y);
+	    if (d.matches('circle.dot')) {
+		this.currentDot = parseInt(d.dataset.dotIndex);
+		this.dragging = true; 
+	    } else {
+		this.dragging = false; 
 	    }
+	    
+	    this.notclick = false;
+	    setTimeout(function(){ c.notclick = true }, 100)
+	    e.stopPropagation()	    
 	},
 	pointDragEnd: function(e){
 	    var c = this;
-	    if (this.dragging) {
+	    var d = document.elementFromPoint(e.x, e.y);
+
+	    this.dragging = false;
+	    
+	    if (d.matches('circle.dot')) {
+		this.currentDot = parseInt(d.dataset.dotIndex);
+		if (this.notclick) {
+		    var p = getMousePos(this.$refs.dots, e);
+		    this.points[this.currentDot] = [ p.x, p.y ]
+		    this.tick = (new Date).getTime();
+		} else {
+		    
+		}
+	    } else {
+		if (this.notclick) {
+
+		} else {
+		    console.log('adding point');
+		    if (this.points.length < 4) {
+			var p = getMousePos(this.$refs.dots, e);
+			this.points.push([ p.x, p.y ]);
+			this.currentDot = this.points.length - 1;
+		    } else {
+			c.currentDot = undefined
+		    }
+		}
+	    }
+	    c.sendCommand()
+	    e.stopPropagation()	    
+	},
+	pointDrag: function(e){
+	    if (this.dragging && this.currentDot !== undefined) {
 		var p = getMousePos(this.$refs.dots, e);
 		this.points[this.currentDot] = [ p.x, p.y ]
 		this.tick = (new Date).getTime();
-
-		this.dragging = false;
-		this.currentDot = null;
-		e.stopPropagation();
 	    }
-	    return false;
 	},
+	canvasDragStart: function(e){
+	    console.log('here');
+	    var p = getMousePos(this.$refs.grid, e);
+	    p = [p.x, p.y]
+
+	    this.dragStartPoint = p;
+	    this.dragging = true;
+
+	    e.stopPropagation();
+	},
+	canvasDrag: function(e){
+	    e.stopPropagation();
+	    if (this.dragging) {
+		console.log('there');	    
+		var p = getMousePos(this.$refs.grid, e);
+		p = [ p.x, p.y ]
+		
+		this.offsetX = this.offsetX + p[0] - this.dragStartPoint[0];
+		this.offsetY = this.offsetY + p[1] - this.dragStartPoint[1];
+		this.dragStartPoint = p;
+		this.redraw()
+	    }
+	    
+	},
+	canvasDragEnd: function(e){
+	    this.dragging = false;
+	    this.dragStartPoint = [];
+	    this.redraw()
+	    e.stopPropagation();
+	},
+
 	addDot: function(e) {
-	    if (!this.dragging) {
-		var p = getMousePos(this.$refs.dots, e);
-		this.points.push([p.x, p.y])
+	    if (!this.dragging || !this.click) {
+		if (this.points.length < 4) {
+		    var p = getMousePos(this.$refs.dots, e);
+		    this.points.push([p.x, p.y])
+		}
 	    } else {
+		console.log('here it is');
 		this.dragging = false;
 		this.currentDot = null;
 	    }
+	    this.sendCommand()
 	},
 	toggleGrid: function(e){ this.gridOn = !this.gridOn },
 	saveOutput: function(e){
+	    var c = this;
+	    var canvas = this.$refs.output;
+	    canvas.toBlob(function(blob) {
+		let a = document.createElement("a");  
+		a.href = URL.createObjectURL(blob);
 
+		var fileName = c.fileName || 'unperspective.jpg';
+		var newName = fileName.replace(/\.(jpe*g)|.(png)/, '_straightened-' + Math.round((new Date().getTime()) / 1000) + '.png');
+
+		a.download = newName;
+		document.body.appendChild(a);
+		a.click();
+		document.body.removeChild(a);
+		
+	    })
 	}, 
 	redraw: function(){
 	    var canvas = this.$refs.output;
@@ -261,7 +398,11 @@ module.exports = {
 
 	    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-	    ctx.scale(Math.pow(10, this.scaleX - 1) * this.scale, Math.pow(10, this.scaleY - 1) * this.scale);
+	    this.overallScaleX = Math.pow(10, this.scaleX - 1) * this.scale * this.scaleR;
+	    this.overallScaleY = Math.pow(10, this.scaleY - 1) * this.scale * this.scaleR;
+	    
+	    ctx.scale(Math.pow(10, this.scaleX - 1) * this.scale * this.scaleR,
+		      Math.pow(10, this.scaleY - 1) * this.scale * this.scaleR);
 	    ctx.translate(this.offsetX, this.offsetY);
 
 	    ctx.drawImage(this.output_canvas, 0, 0);
@@ -285,15 +426,17 @@ module.exports = {
 		var width = Math.min(img.width, (c.bounding_box.width / 2) - 128); 
 		var scale = width / img.width;
 		
-		c.output_canvas.width  = canvas.width  = output.width = c.svg.width   = width;
-		c.output_canvas.height = canvas.height = output.height = c.svg.height = img.height * scale;
+		c.output_canvas.width  = img.width;
+		canvas.width  = output.width = c.svg.width   = width;
+		c.output_canvas.height = img.height;
+		canvas.height = output.height = c.svg.height = img.height * scale;
 
 		c.svg.viewbox[2] = c.output_canvas.width;
 		c.svg.viewbox[3] = c.output_canvas.height;		
 		
-		ctxs.forEach(ctx => {
-		    ctx.scale(scale, scale);
+		ctxs.forEach((ctx, i) => {
 		    ctx.clearRect(0, 0, canvas.width, canvas.height);
+		    if (i < 2) { ctx.scale(scale, scale) }
 		    ctx.drawImage(img, 0, 0);
 		    ctx.setTransform(1, 0, 0, 1, 0, 0);
 		})
@@ -317,6 +460,7 @@ module.exports = {
 	    	for (var i = 0; i < 1; i++) {
 	    	    if (e.dataTransfer.items[i].kind === 'file' && e.dataTransfer.items[i].type.match(/image.*/)) {
 	    		var file = e.dataTransfer.items[i].getAsFile();
+			c.fileName = file.name;
 			c.loadImage(URL.createObjectURL(file));
 		    } else {
 			
@@ -330,15 +474,11 @@ module.exports = {
 	clear: function(){
 	    this.points = [];
 	},
-	setPoints: function(){
-	},
 	sendCommand: function(){
 	    var c = this;
 	    var calc = new PointCalc();
 	    calc.input = this.points;
 
-	    console.log(this.points);
-	    
 	    if (this.points.length >= 4) {
 		var calc = new PointCalc();
 		calc.input = this.points.slice(0, 4);
