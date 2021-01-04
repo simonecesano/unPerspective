@@ -81,23 +81,35 @@ div.range input { vertical-align:middle }
 	     v-on:mousemove="pointDrag"		
 	     v-on:mouseup="pointDragEnd"		
       	     >
-	  <g>
-	    <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
-	    <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
-	    <line v-if="points.length > 3" :x1="points[2][0]" :y1="points[2][1]" :x2="points[3][0]" :y2="points[3][1]" stroke="white" />
-	    <line v-if="points.length >= 4" :x1="points[3][0]" :y1="points[3][1]" :x2="points[0][0]" :y2="points[0][1]" stroke="white" />
+	  <g v-if="fileName">
+	    <g>
+	      <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
+	      <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
+	      <line v-if="points.length > 3" :x1="points[2][0]" :y1="points[2][1]" :x2="points[3][0]" :y2="points[3][1]" stroke="white" />
+	      <line v-if="points.length >= 4" :x1="points[3][0]" :y1="points[3][1]" :x2="points[0][0]" :y2="points[0][1]" stroke="white" />
+	    </g>
+	    <g :key="tick">
+	      <circle v-for="(p, i) in points" 
+		      v-on:mousedown="dotClick($event, i)"
+		      v-bind:data-dot-index="i"
+		      
+		      v-bind:class="i == currentDot ? [ 'dot', 'selected' ] : [ 'dot' ]"
+		      transform="scale(1, 1)"
+		      
+		      v-bind:id="'points[' + i + ']'"
+		      v-bind:ref="'points[' + i + ']'"
+		      v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
+	    </g>
 	  </g>
-	  <g :key="tick">
-	    <circle v-for="(p, i) in points" 
-		    v-on:mousedown="dotClick($event, i)"
-		    v-bind:data-dot-index="i"
-
-		    v-bind:class="i == currentDot ? [ 'dot', 'selected' ] : [ 'dot' ]"
-		    transform="scale(1, 1)"
-
-		    v-bind:id="'points[' + i + ']'"
-		    v-bind:ref="'points[' + i + ']'"
-		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
+	  <g v-else>
+	    <rect x="0" y="0" :width="svg.width" :height="svg.height" rx="15" style="fill:SlateGray" />
+	    <text
+	      dominant-baseline="middle" 
+	      xml:space="preserve"
+	      style="font-size:32;fill:#ffffff;text-align:center;text-anchor:middle;"
+	      x="svg.width / 2"
+	      y="svg.height / 2"
+	      id="text12"><tspan style="font-size:64;" x="50%" y="50%">drop an image here</tspan></text>
 	  </g>
 	</svg>
       </div>
@@ -153,6 +165,17 @@ div.range input { vertical-align:middle }
     | <span>scale {{ Math.round(scale * 100) / 100 }}</span>
     | <span>overallScaleX {{ Math.round(overallScaleX * 100) / 100 }}</span> | <span>overallScaleY {{ Math.round(overallScaleY * 100) / 100 }}</span>
     </div>
+    <div>
+      <h3>Instrctions</h3>
+      ﻿<ol>
+	<li>drop the picture to be adjusted on the grey area at left</li>
+	<li>click on the picture in clockwise order starting from bottom left to set the four points that will form a rectangle on the output</li>
+	<li>the adjusted picture will appear on the right after you set the fourth point</li>
+	<li>you can adjust the points precisely by clicking on them and using the arrow keys to move them (the active point is the blue one)</li>
+	<li>you can also adjust scale and x/y ratio with the sliders under the output picture</li>
+	<li>and center it by dragging it with your mouse</li>
+      </ol>
+    </div>
   </div>    
 </template>
 <script>
@@ -183,7 +206,7 @@ module.exports = {
 	    output_canvas: document.createElement('canvas'),
 	    dragging: false,
 	    currentDot: undefined,
-	    svg: { width: 105, height: 148, viewbox: [0, 0, 105, 148 ] },
+	    svg: { width: 1024 * 0.75, height: 768 * 0.75, viewbox: [0, 0, 1024 * 0.75 , 768 * 0.75 ] },
 	    tick: 0,
 	    shiftKey: false,
 	    gridOn: true,
@@ -199,12 +222,10 @@ module.exports = {
 	    if (true) {
 		var width = this.svg.width;
 		var height = this.svg.height;
-		console.log(width, height)
 		for (let p = 0; p < width; p += 25) { g[0].push(p) }
 		for (let p = 0; p < width; p += 25) { g[1].push(p) }
 	    }
 
-	    console.log(g);
 	    return g;
 	}
     },
@@ -217,8 +238,16 @@ module.exports = {
 	var cvso = c.$refs.output;
 	var ctx  = c.$refs.input;
 
-	cvsi.addEventListener('click', this.addPoint, false);
-	c.loadImage('./Wolfsburg_VW-Werk.jpg');
+	// cvsi.addEventListener('click', this.addPoint, false);
+
+	var canvas = c.$refs.input;
+	var output = c.$refs.output;
+
+	canvas.width  = output.width  = c.svg.width
+	canvas.height = output.height = c.svg.height
+	
+
+	// c.loadImage('./Wolfsburg_VW-Werk.jpg');
 
 	document.onkeydown = this.keyCheck;
 
@@ -247,7 +276,6 @@ module.exports = {
 	keyCheck: function(e){
 	    var c = this;
 	    if (typeof this.currentDot !== 'undefined') {
-		console.log(e, c.currentDot);
 		var p = this.points[c.currentDot];
 		if (e.key == 'ArrowUp') {
 		    p[1]--;
@@ -264,11 +292,9 @@ module.exports = {
 	    }
 	},
 	checkShift: function(e){
-	    console.log(e.shiftKey);
 	    this.shiftKey = e.shiftKey;
 	},
 	clearShift: function(e){
-	    console.log(e.shiftKey);	    	    
 	    this.shiftKey = false
 	},
 	dotClick: function(e, i){
@@ -310,7 +336,6 @@ module.exports = {
 		if (this.notclick) {
 
 		} else {
-		    console.log('adding point');
 		    if (this.points.length < 4) {
 			var p = getMousePos(this.$refs.dots, e);
 			this.points.push([ p.x, p.y ]);
@@ -331,7 +356,6 @@ module.exports = {
 	    }
 	},
 	canvasDragStart: function(e){
-	    console.log('here');
 	    var p = getMousePos(this.$refs.grid, e);
 	    p = [p.x, p.y]
 
@@ -343,7 +367,6 @@ module.exports = {
 	canvasDrag: function(e){
 	    e.stopPropagation();
 	    if (this.dragging) {
-		console.log('there');	    
 		var p = getMousePos(this.$refs.grid, e);
 		p = [ p.x, p.y ]
 		
@@ -368,7 +391,6 @@ module.exports = {
 		    this.points.push([p.x, p.y])
 		}
 	    } else {
-		console.log('here it is');
 		this.dragging = false;
 		this.currentDot = null;
 	    }
@@ -425,6 +447,8 @@ module.exports = {
 	    img.onload = function() {
 		var width = Math.min(img.width, (c.bounding_box.width / 2) - 128); 
 		var scale = width / img.width;
+
+		console.log(scale);
 		
 		c.output_canvas.width  = img.width;
 		canvas.width  = output.width = c.svg.width   = width;
