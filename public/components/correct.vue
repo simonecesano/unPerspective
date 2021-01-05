@@ -164,8 +164,8 @@ select, select * {
 	     v-on:mouseup="canvasDragEnd"		
 	     >
 	  <g v-if="gridOn">
-	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" style="stroke-width:1" :stroke="gridColor" />
-	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" style="stroke-width:1" :stroke="gridColor" />
+	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" :stroke-width="gridThickness" :stroke="gridColor" />
+	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" :stroke-width="gridThickness" :stroke="gridColor" />
 	  </g>
 	  <g v-if="pointsOn">
 	    <circle v-for="(p, i) in outputPoints" 
@@ -198,9 +198,17 @@ select, select * {
               type="button">save picture</button>
       </div>
       <div>
+	<label>Grid color:</label>
 	<div class="swatch" @click="setGridColor(hex)"
 	     v-bind:style="'background-color:'+hex" v-for="hex in ['#ffffff', '#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33', '#000000']">&nbsp;</div>
       </div>
+      <div>
+	<label>Grid thickness:</label>
+	<input type="radio" v-model="gridThickness" id="gridThickness01" name="gridThickness" value="0.5">
+	<label for="gridThickness01">0.5</label>
+	<input type="radio" v-model="gridThickness" id="gridThickness02" name="gridThickness" value="1.0">
+	<label for="gridThickness02">1.0</label>
+      </div>      
     </div>
     <div v-if="false">
     <span>ScaleR {{ scaleR }}</span> | <span>ScaleX {{ Math.round(scaleX * 100) / 100 }}</span>
@@ -253,6 +261,7 @@ module.exports = {
 	    shiftKey: false,
 	    gridOn: true,
 	    gridColor: '#ffffff',
+	    gridThickness: 0.5,
 	    pointsOn: false,
 	    fileName: undefined,
 	    process: 'frontView'
@@ -306,6 +315,9 @@ module.exports = {
     beforeCreate: function(){
     },
     watch: {
+	gridThickness: function(after, before){
+	    console.log('grid thickness changed', after, before);
+	},
 	currentDot: function(after, before){
 	    console.log('current dot changed', after, before);
 	},
