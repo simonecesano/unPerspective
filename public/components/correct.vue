@@ -96,7 +96,10 @@ select, select * {
 	     
 	     v-on:mousedown="pointDragStart"
 	     v-on:mousemove="pointDrag"		
-	     v-on:mouseup="pointDragEnd"		
+	     v-on:mouseup="pointDragEnd"
+
+
+	     
       	     >
 	  <g v-if="image">
 	    <g>
@@ -294,7 +297,7 @@ module.exports = {
 	    gridThickness: 0.5,
 	    pointsOn: false,
 	    fileName: undefined,
-	    process: 'straightenUp'
+	    process: 'parallelize'
 	};
     },
     computed: {
@@ -499,7 +502,7 @@ module.exports = {
 
 	saveOutput: function(e){
 	    var c = this;
-	    var canvas = this.$refs.outputView;
+	    var canvas = this.outputImage;
 	    canvas.toBlob(function(blob) {
 		let a = document.createElement("a");  
 		a.href = URL.createObjectURL(blob);
@@ -533,32 +536,36 @@ module.exports = {
 	loadImage: function(src){
 	    var c = this;
 
-	    var canvas = c.$refs.inputView;
-	    var outputView = c.$refs.outputView;
 	    var ctxs   = [
 		c.$refs.inputView.getContext('2d'),
 		c.$refs.outputView.getContext('2d'),
-		c.outputImage.getContext('2d')
+		c.outputImage.getContext('2d'),
+		c.inputImage.getContext('2d')
 	    ];
 
 	    c.bounding_box = c.$refs.appspace.getBoundingClientRect()
 	    
 	    var img = new Image;
 	    img.onload = function() {
+		console.log('inputImage', c.inputImage);
+		console.log('img', img.width, img.height);
+
 		var width = Math.min(img.width, (c.bounding_box.width / 2) - 128); 
 		var scale = width / img.width;
 
-		c.outputImage.width  = img.width;
-		canvas.width  = outputView.width = c.svg.width   = width;
-		c.outputImage.height = img.height;
-		canvas.height = outputView.height = c.svg.height = img.height * scale;
+		c.inputImage.width  = c.outputImage.width  = img.width;
+		c.inputImage.height = c.outputImage.height = img.height;
+
+		c.$refs.inputView.width  = c.$refs.outputView.width  = c.svg.width  = width;
+		c.$refs.inputView.height = c.$refs.outputView.height = c.svg.height = img.height * scale;
 
 		c.svg.viewbox[2] = c.outputImage.width;
 		c.svg.viewbox[3] = c.outputImage.height;		
 		
 		ctxs.forEach((ctx, i) => {
-		    ctx.clearRect(0, 0, canvas.width, canvas.height);
+		    ctx.clearRect(0, 0, c.$refs.inputView.width, c.$refs.inputView.height);
 		    if (i < 2) { ctx.scale(scale, scale) }
+
 		    ctx.drawImage(img, 0, 0);
 		    ctx.setTransform(1, 0, 0, 1, 0, 0);
 		})
@@ -571,16 +578,14 @@ module.exports = {
 		// this needs to change to store the original unscaled image
 		// -------------------------------------------------------------
 
-		c.image = ctxs[0].getImageData(0, 0, canvas.width, canvas.height)
-
+		c.image = c.inputImage.getContext('2d').getImageData(0, 0, c.inputImage.width, c.inputImage.height)
+		
 		c.db.conf.put({
 		    id: 'image',
 		    value: c.image
 		}).then(() => {
 		    console.log('loaded image');
 		}).catch(e => console.log(e));
-
-		c.image = ctxs[0].getImageData(0, 0, canvas.width, canvas.height)
 	    }
 	    img.src = src;
 	    
@@ -620,23 +625,64 @@ module.exports = {
 		var dst = calc[c.process];
 		c.outputPoints = dst;
 
+		var fxcanvas = fx.canvas(1500, 1500); // fx is the glfx global
 		
-		var canvas = fx.canvas(1500,1500); // fx is the glfx global
+		
+		
+		console.log('inputImage', c.inputImage)
+		console.log('image', c.image)
+		// ---------------------------------------
+		// use saved scaled image as input
+		// ---------------------------------------
 
-		// use saved image as input
-		var texture = canvas.texture(this.image);
-		canvas.draw(texture, this.$refs.inputView.width, this.$refs.inputView.height);
+		fxcanvas.width  = c.inputImage.width;
+		fxcanvas.height = c.inputImage.height;
 
-		// alter through points and perspective
-		canvas.perspective(src.flat(), dst.flat()).update();
+		console.log(fxcanvas, fxcanvas.width, fxcanvas.height);
+		console.log(c.scale);
 
-		// create an output canvas
-		c.outputImage.width = c.outputImage.height = 1500;
+		if (false) {
+		    var texture = fxcanvas.texture(this.image);
+		    fxcanvas.draw(texture, this.$refs.inputView.width, this.$refs.inputView.height);
+		    
+		    // ---------------------------------------
+		    // alter through points and perspective
+		    // ---------------------------------------		
+		    fxcanvas.perspective(src.flat(), dst.flat()).update();
+		    
+		    console.log(src.flat())
+		    console.log(src.flat().map(p => p / c.scale))
+		    console.log(dst.flat());
+		    console.log(dst.flat().map(p => p / c.scale))
+		
+		    // ------------------------------------------
+		    // use the output canvas created at mounted
+		    // ------------------------------------------
+		    c.outputImage.width = c.outputImage.height = 1500;
+		    
+		    // ----------------------------------------
+		    // put the results in the output image
+		    // ----------------------------------------
+		} else {
+		    var texture = fxcanvas.texture(this.inputImage);
+		    fxcanvas.draw(texture, this.inputImage.width, this.inputImage.height);
+		    
+		    // ---------------------------------------
+		    // alter through points and perspective
+		    // ---------------------------------------		
+		    fxcanvas.perspective(src.flat().map(p => p / c.scale), dst.flat().map(p => p / c.scale)).update();
+		    // ------------------------------------------
+		    // use the output canvas created at mounted
+		    // ------------------------------------------
+		}
 
+		
 		var ctx = c.outputImage.getContext('2d');
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-		ctx.drawImage(canvas, 0, 0);
-		
+		ctx.drawImage(fxcanvas, 0, 0);
+		// ----------------------------------------
+		// 
+		// ----------------------------------------
 		c.redraw()
 	    }
 	},
