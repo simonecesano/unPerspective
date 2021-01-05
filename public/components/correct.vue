@@ -57,9 +57,26 @@ div.range { display: table-cell; vertical-align: middle; height: 50px }
 div.range label { vertical-align:middle }
 div.range input { vertical-align:middle }
 
+select, select * {
+    // A reset of styles including removing the default dropdown arrow
+    appearance: none;
+    // Additional resets for further consistency
+    background-color: transparent;
+    border: none;
+    padding: 0 1em 0 0;
+    margin: 0;
+    width: 12em;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: inherit;
+    line-height: inherit;
+}
+
+.swatch { width: 24px; height: 24px; margin: 6px; display: inline-block; border:thin solid #444444 }
 </style>
 <template>
   <div ref="appspace">
+    <dexie dbname="unperspective" @hook:mounted="checkImage"></dexie>
     <div style="display:inline-block;vertical-align:top;margin:0;padding:0;position:relative">
       <div>
 	<canvas ref="input" id="input"></canvas>
@@ -81,7 +98,7 @@ div.range input { vertical-align:middle }
 	     v-on:mousemove="pointDrag"		
 	     v-on:mouseup="pointDragEnd"		
       	     >
-	  <g v-if="fileName">
+	  <g v-if="image">
 	    <g>
 	      <line v-if="points.length > 1" :x1="points[0][0]" :y1="points[0][1]" :x2="points[1][0]" :y2="points[1][1]" stroke="white" />
 	      <line v-if="points.length > 2" :x1="points[1][0]" :y1="points[1][1]" :x2="points[2][0]" :y2="points[2][1]" stroke="white" />
@@ -118,6 +135,12 @@ div.range input { vertical-align:middle }
               type="button">correct</button>
 	<button class="favorite styled" @click="clear()"
 		type="button">clear points</button>
+	<label for="process">Process type:</label>
+	<select v-model="process" style="font-family: courier" id="process">
+	  <option value="parallelize">Parallelize</option>
+	  <option value="straightenUp">Straighten up</option>
+	  <option value="frontView">Front view</option>
+	</select>
       </div>
     </div>
     <div style="display:inline-block;vertical-align:top;position:relative">
@@ -141,8 +164,22 @@ div.range input { vertical-align:middle }
 	     v-on:mouseup="canvasDragEnd"		
 	     >
 	  <g v-if="gridOn">
-	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" style="stroke:white;stroke-width:0.5" />
-	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" style="stroke:white;stroke-width:0.5" />
+	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" style="stroke-width:1" :stroke="gridColor" />
+	    <line v-for="(p, i) in grid[1]" :x1="0" :y1="p" :x2="svg.width" :y2="p" style="stroke-width:1" :stroke="gridColor" />
+	  </g>
+	  <g v-if="pointsOn">
+	    <circle v-for="(p, i) in outputPoints" 
+		    v-on:mousedown="dotClick($event, i)"
+		    v-bind:data-dot-index="i"
+		    
+		    v-bind:class="i == currentDot ? [ 'dot', 'selected' ] : [ 'dot' ]"
+		    transform="scale(1, 1)"
+		    
+		    v-bind:id="'outputPoints[' + i + ']'"
+		    v-bind:ref="'outputPoints[' + i + ']'"
+		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
+	    </g>
+
 	  </g>
 	</svg>
 	<div class="range">
@@ -155,8 +192,14 @@ div.range input { vertical-align:middle }
       <div>
 	<button class="favorite styled" @click="toggleGrid()"
               type="button">toggle grid</button>
+	<button class="favorite styled" @click="togglePoints()"
+              type="button">toggle points</button>
 	<button class="favorite styled" @click="saveOutput()"
               type="button">save picture</button>
+      </div>
+      <div>
+	<div class="swatch" @click="setGridColor(hex)"
+	     v-bind:style="'background-color:'+hex" v-for="hex in ['#ffffff', '#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#ffff33', '#000000']">&nbsp;</div>
       </div>
     </div>
     <div v-if="false">
@@ -188,9 +231,7 @@ module.exports = {
     data: function () {
 	return {
 	    points:  [],
-	    input_points: "",
-	    output_points: "",
-	    seq: "0,1,2,3,4,5,6,7,8",
+	    outputPoints:  [],
 	    matrix: [],
 	    style: { border: "thin solid white" },
 	    image: undefined,
@@ -208,9 +249,13 @@ module.exports = {
 	    currentDot: undefined,
 	    svg: { width: 1024 * 0.75, height: 768 * 0.75, viewbox: [0, 0, 1024 * 0.75 , 768 * 0.75 ] },
 	    tick: 0,
+
 	    shiftKey: false,
 	    gridOn: true,
-	    fileName: undefined, 
+	    gridColor: '#ffffff',
+	    pointsOn: false,
+	    fileName: undefined,
+	    process: 'frontView'
 	};
     },
     computed: {
@@ -252,6 +297,10 @@ module.exports = {
 	document.onkeydown = this.keyCheck;
 
     },
+    components: {
+	insideout: httpVueLoader('components/insideout.vue'),
+	dexie: httpVueLoader('components/dexie.vue'),
+    },
     destroyed: function(){
     },
     beforeCreate: function(){
@@ -273,6 +322,31 @@ module.exports = {
 	},
     },
     methods: {
+	setGridColor: function(hex) {
+	    console.log(hex);
+	    this.gridColor = hex;
+	},
+	checkImage: function(){
+	    var c = this;
+	    console.log('checkImage');
+	    c.db.conf.get({
+		id: 'image',
+	    }).then((item) => {
+		if (item) {
+		    var img = item.value;
+		    var canvas = document.createElement('canvas');
+		    canvas.width  = img.width;
+		    canvas.height = img.height;
+		    
+		    var ctx = canvas.getContext("2d");
+		    ctx.putImageData(img, 0, 0)
+		    
+		    c.loadImage(canvas.toDataURL())
+		} else {
+		    console.log('no image')
+		}
+	    }).catch(e => console.log(e));
+	},
 	keyCheck: function(e){
 	    var c = this;
 	    if (typeof this.currentDot !== 'undefined') {
@@ -397,6 +471,7 @@ module.exports = {
 	    this.sendCommand()
 	},
 	toggleGrid: function(e){ this.gridOn = !this.gridOn },
+	togglePoints: function(e){ this.pointsOn = !this.pointsOn },
 	saveOutput: function(e){
 	    var c = this;
 	    var canvas = this.$refs.output;
@@ -472,6 +547,16 @@ module.exports = {
 		// otherwise the dots are included on the canvas
 		// this needs to change to store the original unscaled image
 		// -------------------------------------------------------------
+
+		c.image = ctxs[0].getImageData(0, 0, canvas.width, canvas.height)
+
+		c.db.conf.put({
+		    id: 'image',
+		    value: c.image
+		}).then(() => {
+		    console.log('loaded image');
+		}).catch(e => console.log(e));
+
 		c.image = ctxs[0].getImageData(0, 0, canvas.width, canvas.height)
 	    }
 	    img.src = src;
@@ -480,6 +565,7 @@ module.exports = {
 	dropHandler: function(e){
 	    var c = this;
 	    e.preventDefault();
+	    c.points = [];
 	    if (e.dataTransfer.items) {
 	    	for (var i = 0; i < 1; i++) {
 	    	    if (e.dataTransfer.items[i].kind === 'file' && e.dataTransfer.items[i].type.match(/image.*/)) {
@@ -508,7 +594,8 @@ module.exports = {
 		calc.input = this.points.slice(0, 4);
 
 		var src = this.points;
-		var dst = calc.output;
+		var dst = calc[c.process];
+		c.outputPoints = dst;
 		
 		var canvas = fx.canvas(1500,1500);
 
