@@ -38,7 +38,7 @@ input[type=range][orient=vertical]
     padding: 0 5px;
 }
 
-#input, #output {
+#inputView, #outputView {
     position: relative;
     display:inline-block;
     top: 0px; left: 0px;
@@ -79,7 +79,7 @@ select, select * {
     <dexie dbname="unperspective" @hook:mounted="checkImage"></dexie>
     <div style="display:inline-block;vertical-align:top;margin:0;padding:0;position:relative">
       <div>
-	<canvas ref="input" id="input"></canvas>
+	<canvas ref="inputView" id="inputView"></canvas>
 	<svg ref="dots" id="dots"
       	     xmlns:dc="http://purl.org/dc/elements/1.1/"
       	     xmlns:cc="http://creativecommons.org/ns#"
@@ -145,7 +145,7 @@ select, select * {
     </div>
     <div style="display:inline-block;vertical-align:top;position:relative">
       <div>
-	<canvas v-bind:style="style" ref="output" id="output"></canvas>
+	<canvas v-bind:style="style" ref="outputView" id="outputView"></canvas>
 	<svg ref="grid" id="grid"
       	     xmlns:dc="http://purl.org/dc/elements/1.1/"
       	     xmlns:cc="http://creativecommons.org/ns#"
@@ -179,7 +179,6 @@ select, select * {
 		    v-bind:ref="'outputPoints[' + i + ']'"
 		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
 	    </g>
-
 	  </g>
 	</svg>
 	<div class="range">
@@ -230,10 +229,40 @@ select, select * {
   </div>    
 </template>
 <script>
-    function getMousePos(canvas, evt) {
-	var rect = canvas.getBoundingClientRect();
-	return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
-    }
+
+/*
+# loading the image
+
+- the image gets loaded via an Image object
+- scale to fit in the screen gets calculated
+- it gets saved to a original state canvas
+- it gets output to the input canvas
+- it gets output to the output canvas
+- all the three above as scaled operations
+
+# correction
+
+correction happens in two steps
+
+- perspective correction
+- scaling to fit the output canvas 
+
+# fixes
+
+- create/rename two view canvases inputView and outputView
+- and work on two full size images inputImage and outputImage
+- in case of axonometry adjustments I suppose we can manage output
+  as two perspective adjustments and two writes to canvas
+- use two scale and translate objects to handle output transforms
+- scale and translate on redraw
+- always save outputImage
+
+*/
+
+function getMousePos(canvas, evt) {
+    var rect = canvas.getBoundingClientRect();
+    return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+}
 
 module.exports = {
     data: function () {
@@ -243,7 +272,6 @@ module.exports = {
 	    matrix: [],
 	    style: { border: "thin solid white" },
 	    image: undefined,
-	    output_image: undefined,
 	    bounding_box: {},
 	    scale: 1,
 
@@ -252,7 +280,9 @@ module.exports = {
 	    offsetX: 0,	offsetY: 0,
 	    overallScaleX: undefined, overallScaleY: undefined,
 	    scaleR: 1,
-	    output_canvas: document.createElement('canvas'),
+
+	    outputImage: document.createElement('canvas'),
+
 	    dragging: false,
 	    currentDot: undefined,
 	    svg: { width: 1024 * 0.75, height: 768 * 0.75, viewbox: [0, 0, 1024 * 0.75 , 768 * 0.75 ] },
@@ -264,7 +294,7 @@ module.exports = {
 	    gridThickness: 0.5,
 	    pointsOn: false,
 	    fileName: undefined,
-	    process: 'frontView'
+	    process: 'straightenUp'
 	};
     },
     computed: {
@@ -287,27 +317,16 @@ module.exports = {
 	var c = this;
 
 	c.bounding_box = c.$refs.appspace.getBoundingClientRect()
-	
-	var cvsi = c.$refs.input;
-	var cvso = c.$refs.output;
-	var ctx  = c.$refs.input;
 
-	// cvsi.addEventListener('click', this.addPoint, false);
+	var canvas = c.$refs.inputView;
+	var outputView = c.$refs.outputView;
 
-	var canvas = c.$refs.input;
-	var output = c.$refs.output;
-
-	canvas.width  = output.width  = c.svg.width
-	canvas.height = output.height = c.svg.height
-	
-
-	// c.loadImage('./Wolfsburg_VW-Werk.jpg');
+	canvas.width  = outputView.width  = c.svg.width
+	canvas.height = outputView.height = c.svg.height
 
 	document.onkeydown = this.keyCheck;
-
     },
     components: {
-	insideout: httpVueLoader('components/insideout.vue'),
 	dexie: httpVueLoader('components/dexie.vue'),
     },
     destroyed: function(){
@@ -315,12 +334,8 @@ module.exports = {
     beforeCreate: function(){
     },
     watch: {
-	gridThickness: function(after, before){
-	    console.log('grid thickness changed', after, before);
-	},
-	currentDot: function(after, before){
-	    console.log('current dot changed', after, before);
-	},
+	gridThickness: function(after, before){ },
+	currentDot: function(after, before){ },
 	scaleR: function(after, before){ this.redraw() },
 	xyratio: function(after, before){
 	    if (after > 0) {
@@ -334,13 +349,9 @@ module.exports = {
 	},
     },
     methods: {
-	setGridColor: function(hex) {
-	    console.log(hex);
-	    this.gridColor = hex;
-	},
+	setGridColor: function(hex) { this.gridColor = hex; },
 	checkImage: function(){
 	    var c = this;
-	    console.log('checkImage');
 	    c.db.conf.get({
 		id: 'image',
 	    }).then((item) => {
@@ -374,7 +385,7 @@ module.exports = {
 		}
 		c.points[this.currentDot] = p;
 		c.tick = (new Date).getTime();
-		c.sendCommand()
+		c.correctImage()
 	    }
 	},
 	checkShift: function(e){
@@ -431,7 +442,7 @@ module.exports = {
 		    }
 		}
 	    }
-	    c.sendCommand()
+	    c.correctImage()
 	    e.stopPropagation()	    
 	},
 	pointDrag: function(e){
@@ -480,13 +491,15 @@ module.exports = {
 		this.dragging = false;
 		this.currentDot = null;
 	    }
-	    this.sendCommand()
+	    this.correctImage()
 	},
-	toggleGrid: function(e){ this.gridOn = !this.gridOn },
+
+	toggleGrid:   function(e){ this.gridOn = !this.gridOn },
 	togglePoints: function(e){ this.pointsOn = !this.pointsOn },
+
 	saveOutput: function(e){
 	    var c = this;
-	    var canvas = this.$refs.output;
+	    var canvas = this.$refs.outputView;
 	    canvas.toBlob(function(blob) {
 		let a = document.createElement("a");  
 		a.href = URL.createObjectURL(blob);
@@ -502,7 +515,7 @@ module.exports = {
 	    })
 	}, 
 	redraw: function(){
-	    var canvas = this.$refs.output;
+	    var canvas = this.$refs.outputView;
 	    var ctx = canvas.getContext('2d');
 
 	    ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -514,18 +527,18 @@ module.exports = {
 		      Math.pow(10, this.scaleY - 1) * this.scale * this.scaleR);
 	    ctx.translate(this.offsetX, this.offsetY);
 
-	    ctx.drawImage(this.output_canvas, 0, 0);
+	    ctx.drawImage(this.outputImage, 0, 0);
 	    ctx.setTransform(1, 0, 0, 1, 0, 0);
 	},
 	loadImage: function(src){
 	    var c = this;
 
-	    var canvas = c.$refs.input;
-	    var output = c.$refs.output;
+	    var canvas = c.$refs.inputView;
+	    var outputView = c.$refs.outputView;
 	    var ctxs   = [
-		c.$refs.input.getContext('2d'),
-		c.$refs.output.getContext('2d'),
-		c.output_canvas.getContext('2d')
+		c.$refs.inputView.getContext('2d'),
+		c.$refs.outputView.getContext('2d'),
+		c.outputImage.getContext('2d')
 	    ];
 
 	    c.bounding_box = c.$refs.appspace.getBoundingClientRect()
@@ -535,15 +548,13 @@ module.exports = {
 		var width = Math.min(img.width, (c.bounding_box.width / 2) - 128); 
 		var scale = width / img.width;
 
-		console.log(scale);
-		
-		c.output_canvas.width  = img.width;
-		canvas.width  = output.width = c.svg.width   = width;
-		c.output_canvas.height = img.height;
-		canvas.height = output.height = c.svg.height = img.height * scale;
+		c.outputImage.width  = img.width;
+		canvas.width  = outputView.width = c.svg.width   = width;
+		c.outputImage.height = img.height;
+		canvas.height = outputView.height = c.svg.height = img.height * scale;
 
-		c.svg.viewbox[2] = c.output_canvas.width;
-		c.svg.viewbox[3] = c.output_canvas.height;		
+		c.svg.viewbox[2] = c.outputImage.width;
+		c.svg.viewbox[3] = c.outputImage.height;		
 		
 		ctxs.forEach((ctx, i) => {
 		    ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -596,7 +607,7 @@ module.exports = {
 	clear: function(){
 	    this.points = [];
 	},
-	sendCommand: function(){
+	correctImage: function(){
 	    var c = this;
 	    var calc = new PointCalc();
 	    calc.input = this.points;
@@ -608,17 +619,21 @@ module.exports = {
 		var src = this.points;
 		var dst = calc[c.process];
 		c.outputPoints = dst;
-		
-		var canvas = fx.canvas(1500,1500);
 
-		var texture = canvas.texture(this.image);
 		
-		canvas.draw(texture, this.$refs.input.width, this.$refs.input.height);
+		var canvas = fx.canvas(1500,1500); // fx is the glfx global
+
+		// use saved image as input
+		var texture = canvas.texture(this.image);
+		canvas.draw(texture, this.$refs.inputView.width, this.$refs.inputView.height);
+
+		// alter through points and perspective
 		canvas.perspective(src.flat(), dst.flat()).update();
 
-		c.output_canvas.width = c.output_canvas.height = 1500;
+		// create an output canvas
+		c.outputImage.width = c.outputImage.height = 1500;
 
-		var ctx = c.output_canvas.getContext('2d');
+		var ctx = c.outputImage.getContext('2d');
 		ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 		ctx.drawImage(canvas, 0, 0);
 		
