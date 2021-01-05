@@ -131,7 +131,7 @@ select, select * {
 	</svg>
       </div>
       <div>
-	<button class="favorite styled" @click="sendCommand()"
+	<button class="favorite styled" @click="correctImage()"
               type="button">correct</button>
 	<button class="favorite styled" @click="clear()"
 		type="button">clear points</button>
@@ -178,7 +178,6 @@ select, select * {
 		    v-bind:id="'outputPoints[' + i + ']'"
 		    v-bind:ref="'outputPoints[' + i + ']'"
 		    v-bind:cx="p[0]" v-bind:cy="p[1]" r="6" />
-	    </g>
 	  </g>
 	</svg>
 	<div class="range">
@@ -281,6 +280,7 @@ module.exports = {
 	    overallScaleX: undefined, overallScaleY: undefined,
 	    scaleR: 1,
 
+	    inputImage:  document.createElement('canvas'),
 	    outputImage: document.createElement('canvas'),
 
 	    dragging: false,
