@@ -97,9 +97,6 @@ select, select * {
 	     v-on:mousedown="pointDragStart"
 	     v-on:mousemove="pointDrag"		
 	     v-on:mouseup="pointDragEnd"
-
-
-	     
       	     >
 	  <g v-if="image">
 	    <g>
@@ -157,14 +154,14 @@ select, select * {
       	     xmlns="http://www.w3.org/2000/svg"
       	     version="1.1"
 
+             v-on:mousedown="canvasDragStart"
+             v-on:mousemove="canvasDrag"                
+             v-on:mouseup="canvasDragEnd"
 
 	     v-bind:width="svg.width + 'px'"
       	     v-bind:height="svg.height + 'px'"
       	     v-bind:viewBox="svg.viewbox.join(' ')"
 
-	     v-on:mousedown="canvasDragStart"
-	     v-on:mousemove="canvasDrag"		
-	     v-on:mouseup="canvasDragEnd"		
 	     >
 	  <g v-if="gridOn">
 	    <line v-for="(p, i) in grid[0]" :x1="p" :y1="0" :x2="p" :y2="svg.height" :stroke-width="gridThickness" :stroke="gridColor" />
@@ -177,6 +174,10 @@ select, select * {
 		    
 		    v-bind:class="i == currentDot ? [ 'dot', 'selected' ] : [ 'dot' ]"
 		    transform="scale(1, 1)"
+
+		    v-on:mousedown="outputPointDragStart"
+		    v-on:mousemove="outputPointDrag"		
+		    v-on:mouseup="outputPointDragEnd"		
 		    
 		    v-bind:id="'outputPoints[' + i + ']'"
 		    v-bind:ref="'outputPoints[' + i + ']'"
@@ -352,6 +353,18 @@ module.exports = {
 	},
     },
     methods: {
+	outputPointDragStart: function(e){
+	    console.log(e);
+	    e.stopPropagation()	    
+	},
+	outputPointDrag: function(e){
+	    console.log(e);
+	    e.stopPropagation()	    
+	},		
+	outputPointDragEnd: function(e){
+	    console.log(e);
+	    e.stopPropagation()	    
+	},		
 	setGridColor: function(hex) { this.gridColor = hex; },
 	checkImage: function(){
 	    var c = this;
